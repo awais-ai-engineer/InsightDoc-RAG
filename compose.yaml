@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: insightdoc-postgres
+    environment:
+      POSTGRES_DB: insightdoc
+      POSTGRES_USER: insightdoc
+      POSTGRES_PASSWORD: insightdoc
+    ports:
+      - "5433:5432"
+    volumes:
+      - insightdoc_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insightdoc -d insightdoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  insightdoc_postgres_data:
