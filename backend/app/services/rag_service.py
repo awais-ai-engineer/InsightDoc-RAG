@@ -1,85 +1,96 @@
-"""
-rag_brain.py
-------------
-Retrieved chunks (context) aur user ke question ko LLM ko bhejta hai,
-aur ek accurate, source-based answer generate karwata hai. Agar
-document mein jawab na mile, model saaf keh deta hai "nahi mila"
-(hallucination avoid karne ke liye).
+from uuid import UUID
 
-OpenRouter (free models) use karta hai - koi cost nahi. OpenRouter ka
-API OpenAI-compatible hai, isliye 'openai' python package se hi call
-kar lete hain, bas base_url OpenRouter ka de dete hain.
-"""
-
-import os
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
-SYSTEM_PROMPT = """Aap ek precise Document Q&A assistant hain. Aapko neeche kuch
-document excerpts (context) diye jayenge, aur ek user question.
+from ..core.config import settings
+from .retrieval_service import search_user_documents
 
-Rules:
-1. Sirf diye gaye context ke andar se jawab dein - apni taraf se kuch mat banayein.
-2. Agar context mein jawab nahi milta, saaf saaf keh dein: "Ye document mein
-   ye information nahi mili."
-3. Jawab ke sath, kaunse source/page se ye info aayi hai wo mention karein.
-4. Jawab clear, concise aur direct hona chahiye.
-5. User jis language (Urdu/English/Roman Urdu) mein poochay, usi mein jawab dein.
-"""
 
-# Free Models Router - OpenRouter khud har request ke liye best available
-# free model (Llama, Qwen, etc.) automatically choose kar leta hai.
-# Cost: $0.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openrouter/free"
 
 
-class RAGBrain:
-    def __init__(self, api_key: str = None, model: str = DEFAULT_MODEL):
-        self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key or os.environ.get("OPENROUTER_API_KEY"),
-        )
-        self.model = model
+def answer_question(
+    db: Session,
+    *,
+    user_id: UUID,
+    question: str,
+    top_k: int = 5,
+) -> dict:
+    if not settings.openrouter_api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured")
 
-    def build_context(self, retrieved_chunks: list[dict]) -> str:
-        """Retrieved chunks ko ek formatted context string mein convert karta hai."""
-        context_parts = []
-        for i, chunk in enumerate(retrieved_chunks, start=1):
-            context_parts.append(
-                f"[Excerpt {i} — Source: {chunk['source']}, Page: {chunk['page']}]\n{chunk['text']}"
-            )
-        return "\n\n".join(context_parts)
+    retrieved = search_user_documents(
+        db,
+        user_id=user_id,
+        query=question,
+        top_k=top_k,
+    )
 
-    def answer_question(self, question: str, retrieved_chunks: list[dict]) -> dict:
-        """
-        Question aur retrieved chunks lekar LLM se final answer
-        generate karta hai. Returns answer text + sources used.
-        """
-        if not retrieved_chunks:
-            return {
-                "answer": "Koi relevant document mila hi nahi. Pehle koi document upload karein.",
-                "sources": [],
-            }
+    if not retrieved:
+        return {
+            "answer": (
+                "I could not find relevant information "
+                "in your uploaded documents."
+            ),
+            "sources": [],
+        }
 
-        context = self.build_context(retrieved_chunks)
+    context_sections = []
 
-        user_message = f"""Context (document excerpts):
-{context}
-
-Question: {question}
-
-Upar diye gaye context ke hisab se is question ka jawab dein."""
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+    for index, item in enumerate(retrieved, start=1):
+        page = (
+            f"page {item['page_number']}"
+            if item["page_number"] is not None
+            else "page unavailable"
         )
 
-        answer_text = response.choices[0].message.content or ""
+        context_sections.append(
+            f"[SOURCE {index}]\n"
+            f"File: {item['filename']}\n"
+            f"Location: {page}\n"
+            f"Content:\n{item['content']}"
+        )
 
-        sources = list({f"{c['source']} (page {c['page']})" for c in retrieved_chunks})
+    context = "\n\n".join(context_sections)
 
-        return {"answer": answer_text, "sources": sources}
+    client = OpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=OPENROUTER_BASE_URL,
+    )
+
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are InsightDoc, an AI document assistant. "
+                    "Answer using only the supplied document context. "
+                    "Do not invent information. "
+                    "If the answer is not supported by the context, "
+                    "say that the uploaded documents do not contain "
+                    "enough information. "
+                    "When useful, reference sources as [SOURCE 1], "
+                    "[SOURCE 2], and so on."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"DOCUMENT CONTEXT:\n\n{context}\n\n"
+                    f"QUESTION:\n{question}"
+                ),
+            },
+        ],
+        temperature=0.2,
+        max_tokens=800,
+    )
+
+    answer = response.choices[0].message.content
+
+    return {
+        "answer": answer or "",
+        "sources": retrieved,
+    }

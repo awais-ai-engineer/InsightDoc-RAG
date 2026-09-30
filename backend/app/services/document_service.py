@@ -1,80 +1,124 @@
-"""
-document_loader.py
--------------------
-Documents (PDF ya TXT) ko load karta hai aur unhe chhote, overlapping
-chunks mein todta hai taake embeddings behtar aur precise banein.
-"""
+import re
+from pathlib import Path
 
-import os
+from docx import Document as DocxDocument
 from pypdf import PdfReader
 
 
+PAGE_PATTERN = re.compile(r"\[PAGE (\d+)\]")
+
+
 def load_document_text(file_path: str) -> str:
-    """
-    Ek file (PDF ya TXT) se poora text nikal kar return karta hai.
-    """
-    ext = os.path.splitext(file_path)[1].lower()
+    path = Path(file_path)
+    extension = path.suffix.lower()
 
-    if ext == ".pdf":
-        reader = PdfReader(file_path)
-        text = ""
-        for page_num, page in enumerate(reader.pages, start=1):
-            page_text = page.extract_text() or ""
-            # Har page ka marker rakhte hain taake baad mein source
-            # citation (kaunse page se jawab aya) diya ja sake.
-            text += f"\n\n[PAGE {page_num}]\n{page_text}"
-        return text
+    if extension == ".pdf":
+        reader = PdfReader(path)
+        sections: list[str] = []
 
-    elif ext == ".txt":
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
+        for page_number, page in enumerate(reader.pages, start=1):
+            page_text = (page.extract_text() or "").strip()
 
+            if page_text:
+                sections.append(
+                    f"[PAGE {page_number}]\n{page_text}"
+                )
+
+        return "\n\n".join(sections)
+
+    if extension == ".txt":
+        return path.read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )
+
+    if extension == ".docx":
+        document = DocxDocument(path)
+
+        paragraphs = [
+            paragraph.text.strip()
+            for paragraph in document.paragraphs
+            if paragraph.text.strip()
+        ]
+
+        return "\n".join(paragraphs)
+
+    raise ValueError(
+        f"Unsupported file type: {extension}. "
+        "Supported types are PDF, TXT, and DOCX."
+    )
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = 220,
+    overlap: int = 40,
+) -> list[dict]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+
+    if overlap < 0 or overlap >= chunk_size:
+        raise ValueError(
+            "overlap must be zero or greater and smaller than chunk_size"
+        )
+
+    text = text.strip()
+
+    if not text:
+        return []
+
+    chunks: list[dict] = []
+
+    matches = list(PAGE_PATTERN.finditer(text))
+
+    if matches:
+        sections: list[tuple[int | None, str]] = []
+
+        for index, match in enumerate(matches):
+            start = match.end()
+            end = (
+                matches[index + 1].start()
+                if index + 1 < len(matches)
+                else len(text)
+            )
+
+            page_number = int(match.group(1))
+            section_text = text[start:end].strip()
+
+            if section_text:
+                sections.append((page_number, section_text))
     else:
-        raise ValueError(f"Unsupported file type: {ext}. Sirf .pdf aur .txt supported hain.")
+        sections = [(None, text)]
 
+    step = chunk_size - overlap
 
-def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> list[dict]:
-    """
-    Lambe text ko chhote chunks mein todta hai, thoda overlap ke sath
-    taake context na toote (ek sentence do chunks mein na bat jaye
-    bina context ke).
+    for page_number, section_text in sections:
+        words = section_text.split()
 
-    Returns: list of dicts -> {"text": chunk, "page": page_number}
-    """
-    chunks = []
-    current_page = 1
+        for start in range(0, len(words), step):
+            chunk_words = words[start : start + chunk_size]
 
-    # Page markers ke hisab se text ko split karte hain taake har
-    # chunk ke sath uska sahi page number attach rahe.
-    segments = text.split("[PAGE ")
-    if len(segments) == 1:
-        # TXT file jisme page markers nahi hain
-        segments = [text]
+            if not chunk_words:
+                continue
 
-    for segment in segments:
-        if not segment.strip():
-            continue
+            content = " ".join(chunk_words).strip()
 
-        page_num = current_page
-        if "]" in segment[:6]:
-            try:
-                page_num = int(segment.split("]")[0])
-                segment = segment.split("]", 1)[1]
-            except (ValueError, IndexError):
-                pass
+            if len(content) < 30:
+                continue
 
-        current_page = page_num
-        words = segment.split()
+            chunks.append(
+                {
+                    "text": content,
+                    "page": page_number,
+                }
+            )
 
-        start = 0
-        while start < len(words):
-            end = start + chunk_size
-            chunk_words = words[start:end]
-            chunk_str = " ".join(chunk_words).strip()
-
-            if len(chunk_str) > 30:  # bohat chhote/khali chunks skip karo
-                chunks.append({"text": chunk_str, "page": page_num})
-
-            start += chunk_size - overlap  # overlap ke sath aage badho
+            if start + chunk_size >= len(words):
+                break
 
     return chunks
+
+
+def process_document(file_path: str) -> list[dict]:
+    text = load_document_text(file_path)
+    return chunk_text(text)
