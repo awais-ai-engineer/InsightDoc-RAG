@@ -14,6 +14,7 @@ def search_user_documents(
     user_id: UUID,
     query: str,
     top_k: int = 5,
+    document_ids: list[UUID] | None = None,
 ) -> list[dict]:
     query_embedding = embed_query(query)
 
@@ -39,6 +40,9 @@ def search_user_documents(
         .limit(top_k)
     )
 
+    if document_ids is not None:
+        statement = statement.where(Document.id.in_(document_ids))
+
     results = db.execute(statement).all()
 
     return [
@@ -48,7 +52,7 @@ def search_user_documents(
             "filename": filename,
             "page_number": chunk.page_number,
             "content": chunk.content,
-            "score": max(0.0, 1.0 - float(distance_value)),
+            "relevance_score": max(0.0, 1.0 - float(distance_value)),
         }
         for chunk, filename, distance_value in results
     ]

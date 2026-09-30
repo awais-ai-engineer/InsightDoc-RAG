@@ -11,21 +11,24 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openrouter/free"
 
 
+class ProviderError(RuntimeError):
+    pass
+
+
 def answer_question(
     db: Session,
     *,
     user_id: UUID,
     question: str,
     top_k: int = 5,
+    document_ids: list[UUID] | None = None,
 ) -> dict:
-    if not settings.openrouter_api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not configured")
-
     retrieved = search_user_documents(
         db,
         user_id=user_id,
         query=question,
         top_k=top_k,
+        document_ids=document_ids,
     )
 
     if not retrieved:
@@ -36,6 +39,9 @@ def answer_question(
             ),
             "sources": [],
         }
+
+    if not settings.openrouter_api_key:
+        raise ProviderError("The language model provider is not configured")
 
     context_sections = []
 
@@ -60,9 +66,10 @@ def answer_question(
         base_url=OPENROUTER_BASE_URL,
     )
 
-    response = client.chat.completions.create(
-        model=DEFAULT_MODEL,
-        messages=[
+    try:
+        response = client.chat.completions.create(
+            model=DEFAULT_MODEL,
+            messages=[
             {
                 "role": "system",
                 "content": (
@@ -83,14 +90,28 @@ def answer_question(
                     f"QUESTION:\n{question}"
                 ),
             },
-        ],
-        temperature=0.2,
-        max_tokens=800,
-    )
+            ],
+            temperature=0.2,
+            max_tokens=800,
+        )
+    except Exception as exc:
+        raise ProviderError("The configured language model provider is unavailable") from exc
 
     answer = response.choices[0].message.content
 
     return {
         "answer": answer or "",
-        "sources": retrieved,
+        "sources": [
+            {
+                key: item[key]
+                for key in (
+                    "chunk_id",
+                    "document_id",
+                    "filename",
+                    "page_number",
+                    "relevance_score",
+                )
+            }
+            for item in retrieved
+        ],
     }
