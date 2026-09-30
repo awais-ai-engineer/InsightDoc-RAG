@@ -4,6 +4,7 @@ from .api.v1.auth import router as auth_router
 from .api.v1.chat import router as chat_router
 from .api.v1.chats import router as chats_router
 from .api.v1.documents import router as documents_router
+from .api.v1.workspaces import router as workspaces_router
 
 
 app = FastAPI(
@@ -16,6 +17,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(chats_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
+app.include_router(workspaces_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["system"])

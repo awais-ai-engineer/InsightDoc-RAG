@@ -9,7 +9,8 @@ from ...db.session import get_db
 from ...models.document import Document
 from ...models.document_chunk import DocumentChunk
 from ...models.user import User
-from ...schemas.document import DocumentList, DocumentRead
+from ...schemas.document import DocumentList, DocumentRead, DocumentWorkspaceUpdate
+from ...models.workspace import Workspace
 from ...services.ingestion_service import ingest_document
 from ...services.storage import UploadTooLargeError, save_upload
 from ..dependencies import get_current_user
@@ -133,6 +134,19 @@ def get_document(
     db: Session = Depends(get_db),
 ) -> DocumentRead:
     return DocumentRead.model_validate(get_owned_document(db, document_id, current_user.id))
+
+
+@router.patch("/{document_id}/workspace", response_model=DocumentRead)
+def assign_document_workspace(payload: DocumentWorkspaceUpdate, document_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DocumentRead:
+    document = get_owned_document(db, document_id, current_user.id)
+    if payload.workspace_id is not None:
+        workspace = db.scalar(select(Workspace).where(Workspace.id == payload.workspace_id, Workspace.user_id == current_user.id))
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+    document.workspace_id = payload.workspace_id
+    db.commit()
+    db.refresh(document)
+    return DocumentRead.model_validate(document)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

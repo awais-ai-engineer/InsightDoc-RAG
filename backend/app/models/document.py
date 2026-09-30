@@ -22,6 +22,12 @@ class Document(Base):
         index=True,
         nullable=False,
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     filename: Mapped[str] = mapped_column(
         String(255),
         nullable=False,

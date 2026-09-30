@@ -10,6 +10,7 @@ class DocumentRead(BaseModel):
     content_type: str
     size_bytes: int | None
     status: str
+    workspace_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -19,3 +20,7 @@ class DocumentRead(BaseModel):
 class DocumentList(BaseModel):
     items: list[DocumentRead]
     total: int
+
+
+class DocumentWorkspaceUpdate(BaseModel):
+    workspace_id: UUID | None
