@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     )
 
     openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    llm_model: str = "openrouter/free"
+    frontend_origin: str = "http://localhost:3000"
 
     jwt_secret_key: str | None = None
     jwt_algorithm: str = "HS256"

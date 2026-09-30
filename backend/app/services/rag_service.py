@@ -7,10 +7,6 @@ from ..core.config import settings
 from .retrieval_service import search_user_documents
 
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "openrouter/free"
-
-
 class ProviderError(RuntimeError):
     pass
 
@@ -63,12 +59,12 @@ def answer_question(
 
     client = OpenAI(
         api_key=settings.openrouter_api_key,
-        base_url=OPENROUTER_BASE_URL,
+        base_url=settings.openrouter_base_url,
     )
 
     try:
         response = client.chat.completions.create(
-            model=DEFAULT_MODEL,
+            model=settings.llm_model,
             messages=[
             {
                 "role": "system",
