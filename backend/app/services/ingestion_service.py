@@ -34,6 +34,8 @@ def ingest_document(
 
         texts = [chunk["text"] for chunk in chunks]
         embeddings = embed_texts(texts)
+        if len(embeddings) != len(chunks) or any(len(embedding) != 384 for embedding in embeddings):
+            raise ValueError("Embedding output did not match the document chunks or dimension")
 
         db.execute(
             delete(DocumentChunk).where(
