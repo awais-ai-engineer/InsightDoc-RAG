@@ -9,7 +9,7 @@ from ...db.session import get_db
 from ...models.document import Document
 from ...models.document_chunk import DocumentChunk
 from ...models.user import User
-from ...schemas.document import DocumentList, DocumentRead, DocumentWorkspaceUpdate
+from ...schemas.document import DocumentFavoriteUpdate, DocumentList, DocumentRead, DocumentWorkspaceUpdate
 from ...models.workspace import Workspace
 from ...services.ingestion_service import ingest_document
 from ...services.storage import UploadTooLargeError, save_upload
@@ -105,12 +105,16 @@ def list_documents(
     db: Session = Depends(get_db),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    favorite: bool | None = Query(default=None),
 ) -> DocumentList:
     owned = Document.user_id == current_user.id
-    total = db.scalar(select(func.count()).select_from(Document).where(owned)) or 0
+    filters = [owned]
+    if favorite is not None:
+        filters.append(Document.is_favorite == favorite)
+    total = db.scalar(select(func.count()).select_from(Document).where(*filters)) or 0
     documents = db.scalars(
         select(Document)
-        .where(owned)
+        .where(*filters)
         .order_by(Document.created_at.desc(), Document.id.desc())
         .limit(limit)
         .offset(offset)
@@ -144,6 +148,15 @@ def assign_document_workspace(payload: DocumentWorkspaceUpdate, document_id: UUI
         if workspace is None:
             raise HTTPException(status_code=404, detail="Workspace not found")
     document.workspace_id = payload.workspace_id
+    db.commit()
+    db.refresh(document)
+    return DocumentRead.model_validate(document)
+
+
+@router.patch("/{document_id}/favorite", response_model=DocumentRead)
+def update_document_favorite(payload: DocumentFavoriteUpdate, document_id: UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DocumentRead:
+    document = get_owned_document(db, document_id, current_user.id)
+    document.is_favorite = payload.is_favorite
     db.commit()
     db.refresh(document)
     return DocumentRead.model_validate(document)

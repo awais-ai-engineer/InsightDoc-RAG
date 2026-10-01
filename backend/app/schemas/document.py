@@ -10,6 +10,7 @@ class DocumentRead(BaseModel):
     content_type: str
     size_bytes: int | None
     status: str
+    is_favorite: bool
     workspace_id: UUID | None
     created_at: datetime
     updated_at: datetime
@@ -24,3 +25,7 @@ class DocumentList(BaseModel):
 
 class DocumentWorkspaceUpdate(BaseModel):
     workspace_id: UUID | None
+
+
+class DocumentFavoriteUpdate(BaseModel):
+    is_favorite: bool
