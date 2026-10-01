@@ -13,6 +13,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter(); const pathname = usePathname();
   useEffect(() => { const stored = tokenStore.get(); if (!stored) { setLoading(false); return; } setToken(stored); api<User>("/auth/me", {}, stored).then(setUser).catch(() => { tokenStore.clear(); setToken(null); }).finally(() => setLoading(false)); }, []);
   useEffect(() => { if (!loading && !user && !["/login", "/signup"].includes(pathname)) router.replace("/login"); }, [loading, user, pathname, router]);
+  useEffect(() => { const unauthorized = () => { tokenStore.clear(); setToken(null); setUser(null); router.replace("/login"); }; window.addEventListener("insightdoc:unauthorized", unauthorized); return () => window.removeEventListener("insightdoc:unauthorized", unauthorized); }, [router]);
   const login = (nextToken: string, nextUser: User) => { tokenStore.set(nextToken); setToken(nextToken); setUser(nextUser); router.replace("/dashboard"); };
   const logout = () => { tokenStore.clear(); setToken(null); setUser(null); router.replace("/login"); };
   return <AuthContext.Provider value={{ user, token, loading, login, logout }}>{children}</AuthContext.Provider>;

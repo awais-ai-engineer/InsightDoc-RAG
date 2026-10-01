@@ -1,114 +1,93 @@
-# InsightDoc RAG
+# InsightDoc
 
-RAG-based document question-answering for PDF and text files with source-aware retrieval.
-
-InsightDoc lets users upload documents, index them into a vector store, ask natural-language questions, and receive answers grounded in retrieved document context with source metadata.
+InsightDoc is a private document intelligence application. Users upload PDF, TXT, or DOCX files, organize them into workspaces, and ask questions that are answered from retrieved document context with source citations.
 
 ## Architecture
 
 ```text
-Documents
-→ parsing
-→ chunking
-→ embeddings
-→ ChromaDB
-
-Question
-→ query embedding
-→ similarity search
-→ relevant chunks
-→ LLM generation
-→ grounded answer with sources
+Next.js client → FastAPI → PostgreSQL + pgvector
+                         ↘ local uploads (development)
+                         ↘ OpenRouter-compatible LLM
 ```
 
-## Tech Stack
+The backend extracts text, creates overlapping chunks, embeds them with `sentence-transformers/all-MiniLM-L6-v2`, and stores 384-dimensional vectors in PostgreSQL. Queries use owner-scoped cosine retrieval before sending selected context to the configured provider.
 
-| Layer | Technology |
-| --- | --- |
-| Embeddings | Sentence Transformers (`all-MiniLM-L6-v2`) |
-| Vector store | ChromaDB |
-| LLM access | OpenRouter-compatible API |
-| Interface | Streamlit |
-| Document parsing | PyPDF |
+## Features
 
-## Project Structure
+- JWT signup, login, session hydration, and protected routes
+- Automatic PDF, TXT, and DOCX ingestion up to 50 MB
+- User-scoped documents, retrieval, chats, workspaces, and favorites
+- Persistent ordered chat messages and structured citations
+- Responsive Next.js dashboard, document manager, chat, history, favorites, and settings
+- Alembic migrations and PostgreSQL-backed automated tests
+- Preserved legacy Streamlit prototype in `app.py` and `modules/`
 
-```text
-.
-├── app.py
-├── modules/
-│   ├── document_loader.py
-│   ├── vector_store.py
-│   └── rag_brain.py
-├── requirements.txt
-├── .env.example
-└── README.md
+## Local development
+
+Prerequisites: Python 3.11+, Node.js 20+, Docker, and Docker Compose.
+
+Start PostgreSQL with pgvector:
+
+```powershell
+docker compose up -d db
 ```
 
-## How It Works
+Create the Python environment and install the backend:
 
-1. PDF and text files are parsed into document content.
-2. Content is divided into overlapping chunks to preserve local context.
-3. Each chunk is converted into an embedding with `all-MiniLM-L6-v2`.
-4. Embeddings and source metadata are stored in ChromaDB.
-5. A user question is embedded with the same model.
-6. Similarity search retrieves the most relevant chunks.
-7. Retrieved context and the question are sent to the configured LLM.
-8. The answer is returned together with document source information.
-
-## Run Locally
-
-```bash
+```powershell
 python -m venv .venv
-```
-
-Activate the environment:
-
-```powershell
-.venv\Scripts\activate
-```
-
-```bash
-# macOS / Linux
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Copy the environment template and set your OpenRouter key:
-
-```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
 Copy-Item .env.example .env
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-```bash
-# macOS / Linux
-cp .env.example .env
+Use another terminal for the frontend:
+
+```powershell
+cd frontend
+Copy-Item .env.example .env.local
+npm install
+npm run dev
 ```
 
-Start the app:
+Open `http://localhost:3000`. The API defaults to `http://127.0.0.1:8000/api/v1`.
 
-```bash
-streamlit run app.py
+## Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection with pgvector enabled |
+| `JWT_SECRET_KEY` | JWT signing secret, at least 32 bytes |
+| `OPENROUTER_API_KEY` | Provider credential |
+| `OPENROUTER_BASE_URL` | OpenAI-compatible provider base URL |
+| `LLM_MODEL` | Provider model identifier |
+| `FRONTEND_ORIGIN` | Exact browser origin allowed by CORS |
+| `NEXT_PUBLIC_API_BASE_URL` | Browser-visible FastAPI `/api/v1` URL |
+
+The frontend stores the bearer token in browser local storage for this standalone architecture. A same-domain production deployment should consider secure HTTP-only cookies.
+
+## Testing and validation
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe -m pytest -q
+..\.venv\Scripts\python.exe -m alembic check
+
+cd ..\frontend
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
 
-## Engineering Focus
+Tests mock embeddings and provider calls where appropriate. They do not make real LLM requests.
 
-- Retrieval-Augmented Generation
-- Semantic search
-- Embedding pipelines
-- Vector databases
-- Source metadata and grounded generation
-- Modular Python application design
+## Provider status
 
-## Current Scope
+The OpenRouter account used during development returned HTTP 400 with an empty response, including its key endpoint. Retrieval and citation generation are independently tested and operational. Provider failures return a clean 503 response, and the frontend explains that documents and chat history remain safe.
 
-The current implementation supports PDF and text documents and retrieves the most relevant chunks for each question. Future improvements can include additional file formats, multi-turn retrieval, reranking, evaluation pipelines, and production deployment.
+## Production requirements
 
-## Note on Reliability
-
-RAG can reduce unsupported answers by grounding generation in retrieved context, but answer quality still depends on parsing, chunking, retrieval quality, model behavior, and the available source material.
+Local files under `data/uploads` are suitable for development only. Production needs durable object storage behind the existing storage service boundary, hosted PostgreSQL with pgvector, strong secrets, HTTPS, and separately hosted frontend and backend services. No cloud infrastructure is provisioned by this repository.

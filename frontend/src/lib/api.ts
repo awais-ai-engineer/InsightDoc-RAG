@@ -18,6 +18,7 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
   try { response = await fetch(`${API_BASE}${path}`, { ...options, headers }); }
   catch { throw new ApiError(0, "The InsightDoc server is unavailable. Please try again shortly."); }
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined" && token) window.dispatchEvent(new Event("insightdoc:unauthorized"));
     let message = `Request failed (${response.status})`;
     try { const body = await response.json(); message = typeof body.detail === "string" ? body.detail : message; } catch {}
     throw new ApiError(response.status, message);
