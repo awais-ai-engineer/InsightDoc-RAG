@@ -15,7 +15,9 @@ export type IconName =
   | "spark"
   | "plus"
   | "close"
-  | "send";
+  | "send"
+  | "search"
+  | "trash";
 
 const paths: Record<IconName, React.ReactNode> = {
   overview: (
@@ -85,6 +87,17 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="M5 5l14 14M19 5 5 19" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16 16 5 5" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" />
+    </>
+  ),
   send: (
     <>
       <path d="m3 20 18-8L3 4l2.8 7 8.2 1-8.2 1L3 20Z" />
